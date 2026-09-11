@@ -1,0 +1,737 @@
+APP DE PRÉSTAMOS PERSONALES
+Resumen técnico y lógica de negocio
+======================================
+
+1. OBJETIVO
+-----------
+Crear una aplicación para administrar préstamos personales realizados a clientes/amigos, reemplazando el control actual en Excel.
+
+La app debe permitir:
+- Registrar clientes.
+- Crear préstamos.
+- Registrar pagos parciales o totales.  
+- Calcular saldos automáticamente.
+- Renovar préstamos descontando deuda pendiente.
+- Mantener historial completo de movimientos.
+- Mostrar un resumen general de cartera.
+- Evitar editar manualmente saldos calculados.
+
+La app NO incluye por ahora la gestión personal de ingresos y egresos.
+
+
+2. MODELO PRINCIPAL
+-------------------
+La estructura lógica será:
+
+CLIENTE
+  -> PRÉSTAMOS
+       -> PAGOS / MOVIMIENTOS
+       -> RENOVACIONES
+
+Un cliente puede tener uno o varios préstamos a lo largo del tiempo.
+
+Cada préstamo pertenece a un único cliente.
+
+
+3. ENTIDADES PRINCIPALES
+------------------------
+
+CLIENTE
+- id
+- nombres
+- apellidos
+- celular
+- metodo_pago_preferido (Yape, Plin, efectivo, transferencia, etc.)
+- numero_yape_plin
+- observaciones
+- estado
+- created_at
+- updated_at
+
+
+PRESTAMO
+- id
+- cliente_id
+- tipo:
+    NORMAL
+    RENOVACION
+- monto_base
+- porcentaje_interes
+- monto_interes
+- total_a_cobrar
+- monto_desembolsado
+- fecha_prestamo
+- fecha_vencimiento (opcional)
+- numero_cuotas (opcional)
+- estado:
+    ACTIVO
+    PAGADO
+    RENOVADO
+    VENCIDO
+    ANULADO
+- prestamo_origen_id (si nace de una renovación)
+- created_at
+- updated_at
+
+
+PAGO
+- id
+- prestamo_id
+- monto
+- fecha_pago
+- metodo_pago
+- observacion
+- tipo:
+    PAGO_NORMAL
+    COMPENSACION_RENOVACION
+    AJUSTE
+- created_at
+
+
+RENOVACION
+Puede manejarse como una entidad independiente o mediante relación entre préstamos.
+
+Datos mínimos:
+- id
+- prestamo_anterior_id
+- nuevo_prestamo_id
+- saldo_compensado
+- nuevo_monto_solicitado
+- monto_real_entregado
+- fecha
+- created_at
+
+
+MOVIMIENTO / AUDITORIA
+Recomendado para trazabilidad:
+- id
+- cliente_id
+- prestamo_id
+- tipo_movimiento
+- monto
+- descripcion
+- fecha
+- metadata opcional
+- created_at
+
+
+4. REGLAS DE CÁLCULO
+--------------------
+
+4.1 Préstamo normal
+
+Ejemplo:
+Monto prestado: S/ 500
+Interés: 20%
+
+monto_interes =
+    monto_base * porcentaje_interes / 100
+
+total_a_cobrar =
+    monto_base + monto_interes
+
+Resultado:
+Monto base: S/ 500
+Interés: S/ 100
+Total a cobrar: S/ 600
+Monto desembolsado: S/ 500
+
+
+4.2 Saldo pendiente
+
+saldo_pendiente =
+    total_a_cobrar
+    - suma(pagos_normales)
+    - suma(compensaciones_validas)
+
+El saldo NO debe almacenarse como un valor editable.
+
+Debe calcularse a partir de los movimientos del préstamo.
+
+
+4.3 Total pagado
+
+total_pagado =
+    suma de pagos aplicados al préstamo
+
+
+4.4 Ganancia por interés
+
+ganancia_teorica =
+    total_a_cobrar - monto_base
+
+La aplicación también puede calcular:
+
+ganancia_realizada =
+    parte de intereses ya efectivamente cobrada
+
+Esto puede agregarse más adelante si se necesita separar recuperación de capital e interés.
+
+
+5. LÓGICA DE RENOVACIÓN
+-----------------------
+
+La renovación es una operación especial.
+
+Caso:
+
+Saldo pendiente del préstamo anterior:
+S/ 100
+
+Cliente solicita un nuevo préstamo:
+S/ 500
+
+Entonces:
+
+nuevo_monto_base = S/ 500
+saldo_anterior = S/ 100
+
+monto_real_entregado =
+    nuevo_monto_base - saldo_anterior
+
+Resultado:
+Monto del nuevo préstamo: S/ 500
+Deuda anterior compensada: S/ 100
+Dinero realmente entregado: S/ 400
+
+Si el interés del nuevo préstamo es 20%:
+
+interes = S/ 100
+total_nuevo_a_cobrar = S/ 600
+
+
+IMPORTANTE:
+
+El préstamo anterior NO debe registrarse como si el cliente hubiera pagado S/ 100 en efectivo.
+
+Debe registrarse:
+
+COMPENSACION_POR_RENOVACION: S/ 100
+
+Luego:
+- El préstamo anterior queda con saldo S/ 0.
+- Su estado pasa a RENOVADO.
+- Se crea un nuevo préstamo.
+- El nuevo préstamo mantiene trazabilidad hacia el préstamo anterior.
+
+
+6. VALIDACIONES DE RENOVACIÓN
+-----------------------------
+
+Antes de renovar:
+
+- El cliente debe tener un préstamo activo.
+- Debe existir un saldo pendiente mayor a 0.
+- El nuevo monto solicitado debe ser válido.
+
+Caso normal:
+
+nuevo_monto > saldo_anterior
+
+Ejemplo:
+Solicita S/ 500
+Debe S/ 100
+Se entregan S/ 400.
+
+
+Si:
+
+nuevo_monto == saldo_anterior
+
+Entonces:
+- El desembolso real sería S/ 0.
+- Se debe pedir confirmación o bloquear según la regla de negocio final.
+
+
+Si:
+
+nuevo_monto < saldo_anterior
+
+Ejemplo:
+Debe S/ 500
+Solicita S/ 300
+
+No se debe procesar como renovación estándar.
+
+La app debe:
+- bloquear la operación, o
+- manejarla como pago/reestructuración especial.
+
+Para la primera versión, lo recomendable es bloquearla.
+
+
+7. REGISTRO DE PAGOS
+--------------------
+
+Al registrar un pago:
+
+1. Seleccionar cliente.
+2. Seleccionar préstamo activo.
+3. Ingresar monto.
+4. Ingresar fecha.
+5. Seleccionar método de pago.
+6. Confirmar.
+
+Validaciones:
+
+- monto > 0
+- monto <= saldo pendiente
+
+Si el pago es igual al saldo:
+- saldo final = 0
+- préstamo pasa a PAGADO
+
+Si el pago es menor:
+- préstamo continúa ACTIVO
+
+No se debe permitir que un pago deje saldo negativo.
+
+
+8. PRÉSTAMOS MÚLTIPLES
+----------------------
+
+Un cliente puede tener varios préstamos históricos.
+
+Por defecto, la app debe distinguir:
+
+- préstamos pagados
+- préstamos activos
+- préstamos renovados
+- préstamos vencidos
+
+Recomendación para primera versión:
+permitir solo un préstamo ACTIVO principal por cliente.
+
+Un nuevo préstamo mientras existe otro activo debería:
+- tratarse como RENOVACIÓN, o
+- requerir una confirmación especial.
+
+Esto evita ambigüedad al aplicar pagos.
+
+
+9. HISTORIAL
+------------
+
+Cada cliente debe mostrar una línea de tiempo.
+
+Ejemplo:
+
+13/06/2026
+Préstamo creado
+S/ 1,000 + 20%
+Total: S/ 1,200
+
+11/07/2026
+Pago
+S/ 150
+
+17/07/2026
+Pago
+S/ 300
+
+29/08/2026
+Pago
+S/ 150
+
+30/08/2026
+Renovación
+Saldo anterior compensado: S/ 100
+Nuevo préstamo: S/ 500
+Monto entregado: S/ 400
+
+No se recomienda eliminar movimientos históricos.
+
+Si existe un error:
+- anular
+- revertir
+- registrar ajuste
+
+Esto conserva la trazabilidad.
+
+
+10. RESUMEN GENERAL
+-------------------
+
+El dashboard puede calcular:
+
+TOTAL POR COBRAR
+=
+suma de saldos pendientes de préstamos activos
+
+
+TOTAL PRESTADO
+=
+suma de monto_base de préstamos
+
+
+TOTAL DESEMBOLSADO
+=
+suma de monto_desembolsado
+
+Este valor es especialmente importante por las renovaciones.
+
+
+TOTAL COBRADO
+=
+suma de pagos normales recibidos
+
+
+INTERÉS GENERADO
+=
+suma de monto_interes
+
+
+CLIENTES CON DEUDA
+=
+clientes con saldo pendiente > 0
+
+
+PRÉSTAMOS ACTIVOS
+=
+préstamos con estado ACTIVO
+
+
+11. DIFERENCIA IMPORTANTE ENTRE MONTOS
+--------------------------------------
+
+La app debe manejar por separado:
+
+MONTO BASE
+Valor sobre el que se genera el nuevo préstamo.
+
+MONTO DESEMBOLSADO
+Dinero que realmente salió.
+
+TOTAL A COBRAR
+Monto base + interés.
+
+SALDO PENDIENTE
+Lo que todavía falta cobrar.
+
+Ejemplo renovación:
+
+Monto base: S/ 500
+Saldo anterior compensado: S/ 100
+Monto desembolsado: S/ 400
+Interés: S/ 100
+Total a cobrar: S/ 600
+
+
+12. INTERÉS
+-----------
+
+El porcentaje habitual es 20%.
+
+Sin embargo, NO debe estar fijo en código.
+
+Debe ser:
+
+- configurable
+- editable por préstamo
+- inicialmente prellenado con 20%
+
+Esto permite usar:
+- 10%
+- 15%
+- 20%
+- otro porcentaje
+
+sin modificar el sistema.
+
+
+13. ESTADOS
+-----------
+
+CLIENTE
+- ACTIVO
+- INACTIVO
+
+
+PRESTAMO
+- ACTIVO
+- PAGADO
+- RENOVADO
+- VENCIDO
+- ANULADO
+
+
+PAGO
+No necesita estado complejo en primera versión.
+
+Opcional:
+- CONFIRMADO
+- ANULADO
+
+
+14. REGLAS DE INTEGRIDAD
+------------------------
+
+- Nunca modificar manualmente el saldo.
+- Nunca borrar pagos físicamente en producción.
+- Nunca borrar préstamos con movimientos asociados.
+- Utilizar soft delete o estados de anulación.
+- Guardar created_at y updated_at.
+- Usar transacciones de base de datos en operaciones críticas.
+- La renovación completa debe ejecutarse dentro de una sola transacción.
+
+
+15. TRANSACCIÓN DE RENOVACIÓN
+-----------------------------
+
+La renovación debe ser atómica.
+
+Pseudo flujo:
+
+BEGIN TRANSACTION
+
+1. Obtener préstamo activo.
+2. Calcular saldo pendiente actual.
+3. Validar nuevo monto.
+4. Registrar compensación por renovación.
+5. Marcar préstamo anterior como RENOVADO.
+6. Crear nuevo préstamo.
+7. Guardar prestamo_origen_id.
+8. Registrar movimiento de renovación.
+
+COMMIT
+
+Si algún paso falla:
+
+ROLLBACK
+
+Así nunca puede quedar:
+- el préstamo anterior cerrado
+- pero el préstamo nuevo sin crear
+
+
+16. RECOMENDACIÓN DE BASE DE DATOS
+----------------------------------
+
+Modelo relacional recomendado.
+
+Tablas iniciales:
+
+clientes
+prestamos
+pagos
+movimientos
+
+Opcional:
+
+renovaciones
+
+La tabla renovaciones puede evitarse si se registra la relación:
+
+prestamos.prestamo_origen_id
+
+y los movimientos de tipo:
+
+COMPENSACION_RENOVACION
+
+
+17. ESTRUCTURA RECOMENDADA PARA MVP
+-----------------------------------
+
+Módulo Clientes
+- crear
+- editar
+- buscar
+- ver historial
+
+
+Módulo Préstamos
+- crear préstamo
+- consultar préstamo
+- calcular interés
+- ver saldo
+
+
+Módulo Pagos
+- registrar pago
+- consultar pagos
+- anular/revertir pago
+
+
+Módulo Renovaciones
+- calcular renovación
+- mostrar saldo anterior
+- mostrar monto real a entregar
+- confirmar renovación
+
+
+Módulo Dashboard
+- total por cobrar
+- total prestado
+- total desembolsado
+- cobrado
+- ganancias por interés
+- préstamos activos
+- clientes con deuda
+
+
+Módulo Historial
+- movimientos por cliente
+- movimientos por préstamo
+
+
+18. CASOS DE USO PRINCIPALES
+----------------------------
+
+CASO 1
+Nuevo cliente + nuevo préstamo.
+
+CASO 2
+Cliente existente + nuevo préstamo.
+
+CASO 3
+Registrar pago parcial.
+
+CASO 4
+Registrar última cuota.
+
+CASO 5
+Pago total del préstamo.
+
+CASO 6
+Renovar préstamo descontando saldo anterior.
+
+CASO 7
+Consultar cuánto debe un cliente.
+
+CASO 8
+Consultar cuánto dinero total está por cobrar.
+
+CASO 9
+Consultar historial completo de un cliente.
+
+CASO 10
+Corregir un movimiento mediante anulación/ajuste.
+
+
+19. EJEMPLO COMPLETO
+--------------------
+
+Cliente:
+Juan Pérez
+
+Préstamo #1:
+Monto base: S/ 500
+Interés: 20%
+Total: S/ 600
+
+Pagos:
+S/ 200
+S/ 200
+S/ 100
+
+Saldo:
+S/ 100
+
+
+Juan solicita renovación por:
+S/ 500
+
+La app calcula:
+
+Saldo anterior:
+S/ 100
+
+Nuevo préstamo:
+S/ 500
+
+Monto realmente entregado:
+S/ 400
+
+Interés:
+20% = S/ 100
+
+Nuevo total a cobrar:
+S/ 600
+
+
+Resultado:
+
+Préstamo #1
+Estado: RENOVADO
+Saldo: S/ 0
+
+Préstamo #2
+Monto base: S/ 500
+Monto desembolsado: S/ 400
+Total a cobrar: S/ 600
+Saldo pendiente: S/ 600
+Estado: ACTIVO
+
+
+20. PRINCIPIO GENERAL DEL SISTEMA
+---------------------------------
+
+El sistema no debe guardar solamente "cuánto debe una persona".
+
+Debe guardar todos los hechos que llevaron a ese saldo:
+
+- cuánto se prestó
+- cuánto se cobró
+- cuándo se cobró
+- cuánto interés se aplicó
+- cuánto se entregó realmente
+- si existió renovación
+- qué deuda anterior se compensó
+
+El saldo debe ser el RESULTADO de esos movimientos.
+
+Esto permite que la información sea auditable, confiable y fácil de ampliar posteriormente.
+
+
+21. FUERA DEL ALCANCE INICIAL
+-----------------------------
+
+Por ahora NO incluir:
+
+- ingresos y egresos personales
+- contabilidad personal completa
+- conciliación bancaria automática
+- integración Yape/Plin
+- scoring crediticio
+- cobranza automática
+- múltiples usuarios/roles complejos
+
+Pueden agregarse posteriormente.
+
+
+22. POSIBLES MEJORAS FUTURAS
+----------------------------
+
+- Fechas de vencimiento.
+- Número y monto de cuotas.
+- Recordatorios de cobro.
+- Notificaciones.
+- Mora.
+- Interés diferente por cliente.
+- Comprobantes de pago.
+- Reportes mensuales.
+- Exportación Excel/PDF.
+- Copias de seguridad.
+- Aplicación móvil.
+- Sincronización en la nube.
+- Autenticación biométrica.
+- Registro de comprobantes o capturas de Yape/Plin.
+
+
+23. PRIORIDAD DE IMPLEMENTACIÓN
+-------------------------------
+
+FASE 1
+Clientes + préstamos + pagos + saldos.
+
+FASE 2
+Renovaciones y compensaciones.
+
+FASE 3
+Dashboard e historial.
+
+FASE 4
+Reportes y exportaciones.
+
+FASE 5
+Recordatorios, notificaciones y mejoras adicionales.

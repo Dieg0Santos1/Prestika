@@ -32,12 +32,12 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
 
 const styles = StyleSheet.create({
   small: {
-    fontSize: 14,
+    fontSize: 17,
     lineHeight: 20,
     fontWeight: 500,
   },
   smallBold: {
-    fontSize: 14,
+    fontSize: 17,
     lineHeight: 20,
     fontWeight: 700,
   },
@@ -58,16 +58,16 @@ const styles = StyleSheet.create({
   },
   link: {
     lineHeight: 30,
-    fontSize: 14,
+    fontSize: 17,
   },
   linkPrimary: {
     lineHeight: 30,
-    fontSize: 14,
+    fontSize: 17,
     color: '#3c87f7',
   },
   code: {
     fontFamily: Fonts.mono,
     fontWeight: Platform.select({ android: 700 }) ?? 500,
-    fontSize: 12,
+    fontSize: 15,
   },
 });

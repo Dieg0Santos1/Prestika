@@ -5,7 +5,10 @@ node_modules/
 
 # Expo
 .expo/
+.ui-review/
 dist/
+dist-web/
+dist-check/
 web-build/
 expo-env.d.ts
 
@@ -25,6 +28,11 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+.tmp-apk-debug/
+
+# generated release artifacts
+*.apk
+*.zip
 
 # macOS
 .DS_Store

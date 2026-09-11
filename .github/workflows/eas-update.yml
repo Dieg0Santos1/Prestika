@@ -1,0 +1,50 @@
+name: Publicar actualización de Prestika
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: prestika-production-update
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-update:
+    name: Validar y publicar OTA
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.1
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Validar proyecto
+        run: |
+          npm run lint
+          npx tsc --noEmit
+
+      - name: Publicar en el canal production
+        if: ${{ env.EXPO_TOKEN != '' }}
+        run: >-
+          npx eas-cli update
+          --channel production
+          --environment production
+          --message "GitHub ${{ github.sha }}"
+          --non-interactive
+
+      - name: Recordar la configuración de Expo
+        if: ${{ env.EXPO_TOKEN == '' }}
+        run: echo "::warning::Agrega EXPO_TOKEN en los secretos de GitHub para habilitar la publicación OTA."
