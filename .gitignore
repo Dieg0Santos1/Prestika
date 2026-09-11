@@ -9,6 +9,7 @@ node_modules/
 dist/
 dist-web/
 dist-check/
+dist-*/
 web-build/
 expo-env.d.ts
 

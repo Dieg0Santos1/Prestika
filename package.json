@@ -54,8 +54,8 @@
     "web": "expo start --web",
     "build:web": "expo export --platform web",
     "build:android:apk": "npx eas-cli build --platform android --profile production-apk",
-    "update:preview": "npx eas-cli update --channel preview",
-    "update:production": "npx eas-cli update --channel production",
+    "update:preview": "npx eas-cli update --channel preview --environment preview",
+    "update:production": "npx eas-cli update --channel production --environment production",
     "lint": "expo lint"
   },
   "private": true
