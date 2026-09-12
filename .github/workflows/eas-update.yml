@@ -3,6 +3,13 @@ name: Publicar actualización de Prestika
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'assets/**'
+      - 'app.json'
+      - 'eas.json'
+      - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
 
 concurrency:
@@ -21,6 +28,8 @@ jobs:
     steps:
       - name: Descargar código
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Preparar Node.js
         uses: actions/setup-node@v4
@@ -36,8 +45,24 @@ jobs:
           npm run lint
           npx tsc --noEmit
 
+      - name: Detectar cambios nativos
+        id: native
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only HEAD^ HEAD)"
+          if echo "$changed_files" | grep -Eq '^(app\.json|eas\.json|package(-lock)?\.json|assets/images/(Icono|splash-icon)\.)'; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publicar en el canal production
-        if: ${{ env.EXPO_TOKEN != '' }}
+        if: ${{ env.EXPO_TOKEN != '' && steps.native.outputs.required == 'false' }}
         run: >-
           npx eas-cli update
           --channel production
@@ -48,3 +73,7 @@ jobs:
       - name: Recordar la configuración de Expo
         if: ${{ env.EXPO_TOKEN == '' }}
         run: echo "::warning::Agrega EXPO_TOKEN en los secretos de GitHub para habilitar la publicación OTA."
+
+      - name: Avisar que hace falta una APK
+        if: ${{ steps.native.outputs.required == 'true' }}
+        run: echo "::warning::Se detectaron cambios nativos. Genera y prueba una nueva APK; este commit no se publicó como OTA."
