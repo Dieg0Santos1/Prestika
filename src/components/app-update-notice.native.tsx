@@ -29,6 +29,7 @@ function currentBuildNumber() {
 }
 
 export function AppUpdateNotice({ enabled }: { enabled: boolean }) {
+  const { isUpdatePending } = Updates.useUpdates();
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -93,6 +94,14 @@ export function AppUpdateNotice({ enabled }: { enabled: boolean }) {
       subscription.remove();
     };
   }, [checkUpdates, enabled]);
+
+  useEffect(() => {
+    if (!enabled || !isUpdatePending || dismissedOtaRef.current) return;
+    const pendingNotice = setTimeout(() => {
+      setNotice((current) => current?.kind === 'native' ? current : { kind: 'ota' });
+    }, 0);
+    return () => clearTimeout(pendingNotice);
+  }, [enabled, isUpdatePending]);
 
   function dismiss() {
     if (!notice || (notice.kind === 'native' && notice.required)) return;
